@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Flick Aim Trainer — Moving Targets</title>
+  <style>
+    :root{
+      --bg:#0f1724; --panel:#0b1220; --accent:#7c3aed; --muted:#9aa4b2; --glass: rgba(255,255,255,0.04);
+      --success:#16a34a; --danger:#ef4444;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#071023 0%, #07142a 60%);color:#e6eef6;display:flex;align-items:center;justify-content:center;padding:24px}
+    .app{width:100%;max-width:1100px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;overflow:hidden;display:grid;grid-template-columns:1fr 320px;gap:18px;box-shadow:0 10px 30px rgba(2,6,23,0.7)}
+    .stage{position:relative;background:var(--panel);min-height:620px;padding:12px;display:flex;flex-direction:column}
+    canvas{background:linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.05));border-radius:8px;display:block;width:100%;height:100%;}
+    .sidebar{padding:18px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));}
+    h1{font-size:18px;margin:0 0 12px 0}
+    .row{display:flex;gap:8px;align-items:center}
+    .panel{background:var(--glass);padding:10px;border-radius:10px;margin-bottom:12px}
+    .controls label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    input[type=range]{width:100%}
+    .stat{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}
+    button{background:var(--accent);border:0;color:white;padding:8px 10px;border-radius:8px;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+    .small{font-size:13px}
+    .mode{display:flex;gap:8px;margin-bottom:8px}
+    .mode button{flex:1;padding:8px}
+    .footer{margin-top:auto;font-size:12px;color:var(--muted)}
+    .targets-list{font-size:13px;max-height:180px;overflow:auto;padding:6px}
+    .hint{font-size:13px;color:var(--muted);}
+    .bigstat{font-size:28px;font-weight:600}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="stage">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <h1>Flick Aim Trainer — Moving Targets</h1>
+          <div class="hint">Click moving circles as fast and accurately as possible. Tracks accuracy, streaks, and reaction time.</div>
+        </div>
+        <div class="row">
+          <div class="panel small" id="best">Best accuracy: —</div>
+        </div>
+      </div>
+
+      <div style="flex:1;min-height:480px;">
+        <canvas id="gameCanvas"></canvas>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+        <button id="startBtn">Start</button>
+        <button id="stopBtn" class="ghost">Stop</button>
+        <button id="resetBtn" class="ghost">Reset</button>
+        <div style="margin-left:auto;color:var(--muted);font-size:13px">Clicks: <span id="clicks">0</span></div>
+      </div>
+
+    </div>
+
+    <div class="sidebar">
+      <div class="panel controls">
+        <div class="mode">
+          <button id="modeFlick" class="ghost">Flick (spawn+move)</button>
+          <button id="modeTrack" class="ghost">Tracking</button>
+        </div>
+
+        <label>Target size (<span id="sizeVal">28</span> px)</label>
+        <input id="size" type="range" min="8" max="80" value="28">
+
+        <label>Target speed (<span id="speedVal">200</span>) — px / second</label>
+        <input id="speed" type="range" min="20" max="700" value="200">
+
+        <label>Max simultaneous targets (<span id="maxVal">3</span>)</label>
+        <input id="max" type="range" min="1" max="8" value="3">
+
+        <label>Spawn interval (ms) (<span id="spawnVal">800</span>)</label>
+        <input id="spawn" type="range" min="150" max="2500" step="50" value="800">
+
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="hitboxToggle" class="ghost">Toggle hitbox</button>
+          <button id="bounceToggle" class="ghost">Bounce</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="stat"><div>Score</div><div class="bigstat" id="score">0</div></div>
+        <div class="stat"><div>Hits</div><div id="hits">0</div></div>
+        <div class="stat"><div>Misses</div><div id="misses">0</div></div>
+        <div class="stat"><div>Accuracy</div><div id="acc">0%</div></div>
+        <div class="stat"><div>Streak</div><div id="streak">0</div></div>
+        <div class="stat"><div>Avg reaction</div><div id="avgRt">— ms</div></div>
+      </div>
+
+      <div class="panel">
+        <div style="font-size:13px;margin-bottom:8px">Recent hits (last 10)</div>
+        <div class="targets-list" id="recent"></div>
+      </div>
+
+      <div class="footer">
+        <div style="margin-bottom:6px">Tips: Use a low sensitivity, aim with wrist/arm. Practice in short focused sessions.</div>
+        <div style="font-size:12px;color:var(--muted)">Shortcuts: S start, Space stop, R reset</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Flick Aim Trainer — moving targets
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W=0,H=0;
+function fitCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  W = rect.width; H = rect.height;
+}
+window.addEventListener('resize', fitCanvas);
+setTimeout(fitCanvas,10);
+
+// UI
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const resetBtn = document.getElementById('resetBtn');
+const sizeInput = document.getElementById('size');
+const sizeVal = document.getElementById('sizeVal');
+const speedInput = document.getElementById('speed');
+const speedVal = document.getElementById('speedVal');
+const maxInput = document.getElementById('max');
+const maxVal = document.getElementById('maxVal');
+const spawnInput = document.getElementById('spawn');
+const spawnVal = document.getElementById('spawnVal');
+const hitboxToggle = document.getElementById('hitboxToggle');
+const bounceToggle = document.getElementById('bounceToggle');
+const modeFlick = document.getElementById('modeFlick');
+const modeTrack = document.getElementById('modeTrack');
+
+const scoreEl = document.getElementById('score');
+const hitsEl = document.getElementById('hits');
+const missesEl = document.getElementById('misses');
+const accEl = document.getElementById('acc');
+const streakEl = document.getElementById('streak');
+const avgRtEl = document.getElementById('avgRt');
+const recentEl = document.getElementById('recent');
+const clicksEl = document.getElementById('clicks');
+const bestEl = document.getElementById('best');
+
+sizeVal.textContent = sizeInput.value;
+speedVal.textContent = speedInput.value;
+maxVal.textContent = maxInput.value;
+spawnVal.textContent = spawnInput.value;
+
+sizeInput.oninput = ()=> sizeVal.textContent = sizeInput.value;
+speedInput.oninput = ()=> speedVal.textContent = speedInput.value;
+maxInput.oninput = ()=> maxVal.textContent = maxInput.value;
+spawnInput.oninput = ()=> spawnVal.textContent = spawnInput.value;
+
+let running = false;
+let lastTick = performance.now();
+let targets = [];
+let clicks = 0;
+let hits = 0;
+let misses = 0;
+let score = 0;
+let streak = 0;
+let bestAcc = 0;
+let reactions = [];
+let recent = [];
+let spawnTimer = 0;
+let mode = 'flick';
+let showHitbox = false;
+let bounce = true;
+
+// target class
+class Target{
+  constructor(x,y,r,velX,velY){
+    this.x = x; this.y = y; this.r = r; this.vx = velX; this.vy = velY;
+    this.spawn = performance.now();
+    this.alive = true;
+    this.id = Math.random().toString(36).slice(2,8);
+  }
+  update(dt){
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    // bounce or wrap
+    if(bounce){
+      if(this.x - this.r < 0) { this.x = this.r; this.vx *= -1 }
+      if(this.y - this.r < 0) { this.y = this.r; this.vy *= -1 }
+      if(this.x + this.r > W) { this.x = W - this.r; this.vx *= -1 }
+      if(this.y + this.r > H) { this.y = H - this.r; this.vy *= -1 }
+    } else {
+      if(this.x + this.r < 0) this.x = W + this.r;
+      if(this.x - this.r > W) this.x = -this.r;
+      if(this.y + this.r < 0) this.y = H + this.r;
+      if(this.y - this.r > H) this.y = -this.r;
+    }
+  }
+  draw(ctx){
+    // ring + fill
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(124,58,237,0.95)';
+    ctx.stroke();
+    // inner dot
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, Math.max(2, this.r*0.22), 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(124,58,237,0.95)';
+    ctx.fill();
+
+    if(showHitbox){
+      ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+}
+
+function spawnTarget(){
+  if(targets.length >= Number(maxInput.value)) return;
+  const r = Number(sizeInput.value);
+  const x = Math.random() * (W - 2*r) + r;
+  const y = Math.random() * (H - 2*r) + r;
+  // direction random
+  const angle = Math.random() * Math.PI*2;
+  const speed = Number(speedInput.value);
+  const vx = Math.cos(angle) * speed;
+  const vy = Math.sin(angle) * speed;
+  const t = new Target(x,y,r,vx,vy);
+  targets.push(t);
+}
+
+function reset(){
+  targets = [];
+  clicks = hits = misses = score = streak = 0;
+  reactions = []; recent = [];
+  updateUI();
+}
+
+function start(){
+  if(running) return;
+  running = true; lastTick = performance.now(); spawnTimer = 0;
+  loop();
+}
+function stop(){ running = false }
+
+function loop(ts){
+  if(!running) return;
+  const now = ts || performance.now();
+  const dt = Math.min(0.05,(now - lastTick)/1000);
+  lastTick = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function update(dt){
+  // spawn based on interval
+  spawnTimer += dt*1000;
+  const interval = Number(spawnInput.value);
+  if(spawnTimer >= interval){ spawnTimer = 0; spawnTarget(); }
+
+  // update targets
+  for(let t of targets) t.update(dt);
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // grid subtle
+  const gap = 40;
+  ctx.save();
+  ctx.globalAlpha = 0.05;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#ffffff';
+  for(let x=0;x<W;x+=gap){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke() }
+  for(let y=0;y<H;y+=gap){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke() }
+  ctx.restore();
+
+  // draw targets
+  for(let t of targets) t.draw(ctx);
+}
+
+function onClick(e){
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left);
+  const y = (e.clientY - rect.top);
+  clicks++;
+  clicksEl.textContent = clicks;
+  // check hits: find topmost target (last drawn)
+  let hit = null; let hitIndex = -1;
+  for(let i=targets.length-1;i>=0;i--){
+    const t = targets[i];
+    const dx = x - t.x; const dy = y - t.y; const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist <= t.r){ hit = t; hitIndex = i; break }
+  }
+  if(hit){
+    // compute reaction time
+    const rt = Math.round(performance.now() - hit.spawn);
+    reactions.push(rt);
+    recent.unshift(`${rt} ms — r:${hit.r}px id:${hit.id}`);
+    if(recent.length>10) recent.pop();
+
+    // scoring: base points for hit + speed bonus for faster reaction + accuracy by size
+    const base = 100; // base points
+    const bonus = Math.max(0, Math.floor((600 - rt)/6));
+    const sizeBonus = Math.max(0, Math.floor((80 - hit.r)/2));
+    const pts = base + bonus + sizeBonus;
+    score += pts;
+    hits++;
+    streak++;
+    // remove hit target and spawn replacement quickly
+    targets.splice(hitIndex,1);
+    spawnTarget();
+  } else {
+    misses++;
+    streak = 0;
+  }
+  updateUI();
+}
+
+function updateUI(){
+  scoreEl.textContent = score;
+  hitsEl.textContent = hits;
+  missesEl.textContent = misses;
+  streakEl.textContent = streak;
+  const acc = clicks === 0 ? 0 : Math.round(hits / clicks * 100);
+  accEl.textContent = acc + '%';
+  if(acc > bestAcc){ bestAcc = acc; bestEl.textContent = 'Best accuracy: ' + bestAcc + '%' }
+  if(reactions.length){
+    const avg = Math.round(reactions.reduce((a,b)=>a+b,0) / reactions.length);
+    avgRtEl.textContent = avg + ' ms';
+  } else avgRtEl.textContent = '— ms';
+  // recent
+  recentEl.innerHTML = recent.map(r=>`<div style="padding:6px;border-radius:6px;background:rgba(255,255,255,0.02);margin-bottom:6px">${r}</div>`).join('');
+}
+
+// events
+canvas.addEventListener('mousedown', (e)=>{ if(running) onClick(e); });
+canvas.addEventListener('touchstart', (e)=>{ if(running){ e.preventDefault(); const t=e.touches[0]; onClick(t); } }, {passive:false});
+
+startBtn.addEventListener('click', ()=>{ start(); });
+stopBtn.addEventListener('click', ()=>{ stop(); });
+resetBtn.addEventListener('click', ()=>{ reset(); updateUI(); });
+
+hitboxToggle.addEventListener('click', ()=>{ showHitbox = !showHitbox; hitboxToggle.textContent = showHitbox ? 'Hide hitbox' : 'Toggle hitbox' });
+bounceToggle.addEventListener('click', ()=>{ bounce = !bounce; bounceToggle.textContent = bounce ? 'Bounce' : 'Wrap' });
+
+modeFlick.addEventListener('click', ()=>{ mode='flick'; modeFlick.classList.remove('ghost'); modeTrack.classList.add('ghost'); });
+modeTrack.addEventListener('click', ()=>{ mode='track'; modeTrack.classList.remove('ghost'); modeFlick.classList.add('ghost'); });
+
+// keyboard
+window.addEventListener('keydown', (e)=>{
+  if(e.code === 'KeyS') start();
+  if(e.code === 'Space') { if(running) stop(); else start(); e.preventDefault(); }
+  if(e.code === 'KeyR') { reset(); updateUI(); }
+});
+
+// adaptive spawn: ensure min targets when starting
+function ensureInitial(){
+  const m = Number(maxInput.value);
+  for(let i=0;i<Math.min(3,m);i++) spawnTarget();
+}
+
+// when settings change, ensure values applied
+sizeInput.addEventListener('input', ()=>{ for(let t of targets) t.r = Number(sizeInput.value) });
+speedInput.addEventListener('input', ()=>{ for(let t of targets){ const angle = Math.atan2(t.vy, t.vx); const s = Number(speedInput.value); t.vx = Math.cos(angle)*s; t.vy = Math.sin(angle)*s } });
+maxInput.addEventListener('input', ()=>{});
+spawnInput.addEventListener('input', ()=>{});
+
+// start small warmup on load
+fitCanvas();
+ensureInitial();
+updateUI();
+
+// helper: start loop when user clicks start and canvas sized
+startBtn.addEventListener('click', ()=>{ fitCanvas(); ensureInitial(); lastTick = performance.now(); requestAnimationFrame(loop); });
+
+</script>
+</body>
+</html>
