@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Aim trainer for myself</title>
+  <title>Aim trainer</title>
   <style>
     :root{
       --bg:#0f1724; --panel:#0b1220; --accent:#7c3aed; --muted:#9aa4b2; --glass: rgba(255,255,255,0.04);
@@ -106,7 +106,6 @@
   </div>
 
 <script>
-// Flick Aim Trainer — moving targets
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 let W=0,H=0;
@@ -313,7 +312,7 @@ function onClick(e){
     score += pts;
     hits++;
     streak++;
-    // remove hit target and spawn replacement quickly
+    // remove hit target and spawn replacement instantly
     targets.splice(hitIndex,1);
     spawnTarget();
   } else {
