@@ -15,3 +15,5 @@ Improves flick and tracking aim for competitive games.
 
 ## License
 This project is open source and free to use
+
+## Lorem Ipsum
